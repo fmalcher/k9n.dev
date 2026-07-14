@@ -1,4 +1,4 @@
-import type { Meta, StoryObj } from '@storybook/angular';
+import type { Meta, StoryObj } from '@storybook/angular-vite';
 import { SeriesNavigation, type SeriesPost } from './series-navigation';
 
 const samplePosts: SeriesPost[] = [

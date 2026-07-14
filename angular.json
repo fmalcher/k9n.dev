@@ -120,22 +120,16 @@
           "options": {}
         },
         "storybook": {
-          "builder": "@storybook/angular:start-storybook",
+          "builder": "@storybook/angular-vite:start-storybook",
           "options": {
             "configDir": ".storybook",
-            "browserTarget": "k9n-dev:build",
-            "compodoc": true,
-            "compodocArgs": ["-e", "json", "-d", "."],
             "port": 6006
           }
         },
         "build-storybook": {
-          "builder": "@storybook/angular:build-storybook",
+          "builder": "@storybook/angular-vite:build-storybook",
           "options": {
             "configDir": ".storybook",
-            "browserTarget": "k9n-dev:build",
-            "compodoc": true,
-            "compodocArgs": ["-e", "json", "-d", "."],
             "outputDir": "storybook-static"
           }
         },

@@ -1,9 +1,9 @@
 import '@angular/localize/init';
-import type { Preview } from '@storybook/angular';
-import { applicationConfig } from '@storybook/angular';
+import type { Preview } from '@storybook/angular-vite';
+import { applicationConfig } from '@storybook/angular-vite';
 import { provideRouter } from '@angular/router';
-import { setCompodocJson } from "@storybook/addon-docs/angular";
-import docJson from "../documentation.json";
+import { setCompodocJson } from '@storybook/addon-docs/angular';
+import docJson from '../documentation.json';
 setCompodocJson(docJson);
 
 const preview: Preview = {
@@ -15,8 +15,8 @@ const preview: Preview = {
   parameters: {
     controls: {
       matchers: {
-       color: /(background|color)$/i,
-       date: /Date$/i,
+        color: /(background|color)$/i,
+        date: /Date$/i,
       },
     },
   },

@@ -1,4 +1,4 @@
-import type { Meta, StoryObj } from '@storybook/angular';
+import type { Meta, StoryObj } from '@storybook/angular-vite';
 import { PublishedAtBanner } from './published-at-banner';
 
 const meta: Meta<PublishedAtBanner> = {

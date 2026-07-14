@@ -1,4 +1,4 @@
-import type { Meta, StoryObj } from '@storybook/angular';
+import type { Meta, StoryObj } from '@storybook/angular-vite';
 import { ContentCard, type SeriesItem } from './content-card';
 
 const seriesItems: SeriesItem[] = [

@@ -1,4 +1,4 @@
-import type { Meta, StoryObj } from '@storybook/angular';
+import type { Meta, StoryObj } from '@storybook/angular-vite';
 import { PersonalTimeline } from './personal-timeline';
 
 const meta: Meta<PersonalTimeline> = {

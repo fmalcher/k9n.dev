@@ -1,4 +1,4 @@
-import type { Meta, StoryObj } from '@storybook/angular';
+import type { Meta, StoryObj } from '@storybook/angular-vite';
 import { ArticleDetailLayout } from './article-detail-layout';
 
 const meta: Meta<ArticleDetailLayout> = {

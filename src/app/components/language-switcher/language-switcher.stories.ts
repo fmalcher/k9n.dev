@@ -1,4 +1,4 @@
-import type { Meta, StoryObj } from '@storybook/angular';
+import type { Meta, StoryObj } from '@storybook/angular-vite';
 import { LanguageSwitcher } from './language-switcher';
 
 const meta: Meta<LanguageSwitcher> = {

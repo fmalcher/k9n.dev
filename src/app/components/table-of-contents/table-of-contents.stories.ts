@@ -1,4 +1,4 @@
-import type { Meta, StoryObj } from '@storybook/angular';
+import type { Meta, StoryObj } from '@storybook/angular-vite';
 import { TableOfContents, type Heading } from './table-of-contents';
 
 const sampleHeadings: Heading[] = [
