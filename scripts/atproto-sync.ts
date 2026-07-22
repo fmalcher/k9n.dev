@@ -322,6 +322,13 @@ async function syncPublication(session: SessionResponse): Promise<void> {
     preferences: {
       showInDiscover: true,
     },
+    basicTheme: {
+      $type: 'site.standard.theme.basic',
+      background: { $type: 'site.standard.theme.color#rgb', r: 255, g: 255, b: 255 },
+      foreground: { $type: 'site.standard.theme.color#rgb', r: 26, g: 26, b: 46 },
+      accent: { $type: 'site.standard.theme.color#rgb', r: 60, g: 53, b: 153 },
+      accentForeground: { $type: 'site.standard.theme.color#rgb', r: 255, g: 255, b: 255 },
+    },
   };
 
   // Upload the author profile image as the publication icon
