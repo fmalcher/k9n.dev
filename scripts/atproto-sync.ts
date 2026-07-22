@@ -21,6 +21,7 @@
  */
 
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 
 import { AUTHOR } from '../src/data/author';
@@ -53,6 +54,14 @@ interface ListRecordsResponse {
     value: Record<string, unknown>;
   }[];
   cursor?: string;
+}
+
+/** A blob reference as embedded in a record after uploadBlob. */
+interface BlobRef {
+  $type: 'blob';
+  ref: { $link: string };
+  mimeType: string;
+  size: number;
 }
 
 async function createSession(): Promise<SessionResponse> {
@@ -154,6 +163,114 @@ async function listRecords(
   return allRecords;
 }
 
+/** Upload a binary blob to the repo; returns the blob ref to embed in a record. */
+async function uploadBlob(
+  session: SessionResponse,
+  bytes: Uint8Array,
+  mimeType: string,
+): Promise<BlobRef> {
+  const res = await fetch(`${PDS_URL}/xrpc/com.atproto.repo.uploadBlob`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': mimeType,
+      Authorization: `Bearer ${session.accessJwt}`,
+    },
+    body: bytes as unknown as BodyInit,
+  });
+
+  if (!res.ok) {
+    const error = await res.text();
+    throw new Error(`uploadBlob failed: ${res.status} ${error}`);
+  }
+
+  const data = (await res.json()) as { blob: BlobRef };
+  return data.blob;
+}
+
+// ─── Image helpers ───────────────────────────────────────────────────────────
+
+/**
+ * standard.site recommends the document coverImage blob stays below 1 MB.
+ * Skip oversized images rather than let the PDS reject them.
+ */
+const MAX_COVER_BYTES = 1_000_000;
+
+/** Guess an image MIME type from a URL or file path extension. */
+function imageMimeType(source: string): string | null {
+  const ext = source.split('?')[0].split('.').pop()?.toLowerCase();
+  switch (ext) {
+    case 'png': return 'image/png';
+    case 'jpg':
+    case 'jpeg': return 'image/jpeg';
+    case 'webp': return 'image/webp';
+    case 'gif': return 'image/gif';
+    default: return null;
+  }
+}
+
+/** Load image bytes from an http(s) URL or a local file path. */
+async function loadImageBytes(source: string): Promise<Uint8Array> {
+  if (/^https?:\/\//i.test(source)) {
+    const response = await fetch(source);
+    if (!response.ok) {
+      throw new Error(`Cannot fetch image ${source}: ${response.status}`);
+    }
+    return new Uint8Array(await response.arrayBuffer());
+  }
+  return new Uint8Array(await readFile(source));
+}
+
+/**
+ * Resolve the thumbnail header path to an absolute file path or URL.
+ * - Full URLs (http/https) are returned as-is.
+ * - Relative paths (e.g. "images/blog/<slug>/file.jpg") are resolved
+ *   against the built output directory.
+ */
+function resolveImageSource(headerPath: string): string {
+  if (/^https?:\/\//i.test(headerPath)) {
+    return headerPath;
+  }
+  // Relative paths are served from the build output (dist)
+  const distBrowserDir = join(ROOT_DIR, 'dist', 'k9n-dev', 'browser', 'de');
+  return join(distBrowserDir, headerPath);
+}
+
+/**
+ * Upload a blog post's thumbnail header image as a coverImage blob.
+ * Returns the blob ref, or undefined when there is no usable image.
+ * Non-fatal: a missing/oversized/broken image is logged and skipped.
+ */
+async function loadCoverBlob(
+  session: SessionResponse,
+  thumbnailHeader: string,
+): Promise<BlobRef | undefined> {
+  const mimeType = imageMimeType(thumbnailHeader);
+  if (!mimeType) {
+    return undefined;
+  }
+
+  const source = resolveImageSource(thumbnailHeader);
+
+  try {
+    const bytes = await loadImageBytes(source);
+    if (bytes.byteLength > MAX_COVER_BYTES) {
+      console.warn(`  ⚠ Skipping oversized cover image (${(bytes.byteLength / 1024).toFixed(0)} KB): ${thumbnailHeader}`);
+      return undefined;
+    }
+    if (DRY_RUN) {
+      console.log(`  [DRY RUN] Would upload cover image (${(bytes.byteLength / 1024).toFixed(0)} KB): ${thumbnailHeader}`);
+      return undefined;
+    }
+    return await uploadBlob(session, bytes, mimeType);
+  } catch (error) {
+    console.warn(
+      `  ⚠ Skipping cover for ${thumbnailHeader}:`,
+      error instanceof Error ? error.message : error,
+    );
+    return undefined;
+  }
+}
+
 /**
  * Generates a TID (Timestamp Identifier) for use as an rkey.
  * TIDs are 13-character base32-sortable encoded 64-bit integers.
@@ -197,7 +314,7 @@ async function syncPublication(session: SessionResponse): Promise<void> {
     }
   }
 
-  const record = {
+  const record: Record<string, unknown> = {
     $type: 'site.standard.publication',
     url: AUTHOR.url,
     name: AUTHOR.siteName,
@@ -206,6 +323,27 @@ async function syncPublication(session: SessionResponse): Promise<void> {
       showInDiscover: true,
     },
   };
+
+  // Upload the author profile image as the publication icon
+  if (AUTHOR.image?.url) {
+    const iconSource = resolveImageSource(AUTHOR.image.url);
+    const iconMime = imageMimeType(iconSource);
+    if (iconMime) {
+      try {
+        const bytes = await loadImageBytes(iconSource);
+        if (DRY_RUN) {
+          console.log(`  [DRY RUN] Would upload publication icon (${(bytes.byteLength / 1024).toFixed(0)} KB): ${AUTHOR.image.url}`);
+        } else {
+          record['icon'] = await uploadBlob(session, bytes, iconMime);
+        }
+      } catch (error) {
+        console.warn(
+          `  ⚠ Skipping publication icon (${AUTHOR.image.url}):`,
+          error instanceof Error ? error.message : error,
+        );
+      }
+    }
+  }
 
   if (DRY_RUN) {
     console.log('\n[DRY RUN] Would create/update publication record:');
@@ -286,6 +424,14 @@ async function syncDocuments(session: SessionResponse): Promise<number> {
 
     if (post.updated) {
       record['updatedAt'] = new Date(post.updated).toISOString();
+    }
+
+    // Upload cover image blob if the post has a thumbnail header
+    if (post.thumbnail?.header) {
+      const coverBlob = await loadCoverBlob(session, post.thumbnail.header);
+      if (coverBlob) {
+        record['coverImage'] = coverBlob;
+      }
     }
 
     if (DRY_RUN) {
