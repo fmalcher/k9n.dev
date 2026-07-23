@@ -1,6 +1,6 @@
 ---
 title: "When Your Live Region Isn't Live: Fixing aria-live in Angular, React, and Vue"
-description: 'Learn how to fix aria-live regions that fail silently in modern SPAs. Discover why screen readers miss your announcements when frameworks recreate DOM elements, understand the difference between polite and assertive announcements, and implement two reliable patterns - local and global live regions - with concrete examples for Angular, Vue, and React applications.'
+description: 'Learn how to fix aria-live regions that fail silently in modern SPAs. Discover why screen readers miss your announcements when frameworks recreate DOM elements, understand the difference between polite and assertive announcements, learn about live region roles and the native output element, and implement two reliable patterns - local and global live regions - with concrete examples for Angular, Vue, and React applications.'
 published: true
 author:
   name: 'Danny Koppenhagen'
@@ -48,8 +48,12 @@ In this post, we'll break down:
 
 - Why live regions may fail in your SPAs
 - The difference between **polite** and **assertive** announcements
-- What the `aria-relevant` and `aria-atomic` attributes actually doing
+- What the `aria-relevant`, `aria-atomic`, and `aria-busy` attributes actually do (and their support limitations)
+- **Live region roles** (`alert`, `status`, `log`) and the native `<output>` element
+- **Limitations**: why live regions can't handle rich text or interactive content
+- **Alternatives**: focus management, state properties, and instructional cues
 - Two reliable solutions: **local** vs. **global** live regions
+- **Best practices** for robust implementations
 - Concrete implementations in **Angular**, **Vue**, and **React**
 
 By the end, you'll know how to make sure your live regions stay *truly live* — no matter what your framework is doing behind the scenes.
@@ -188,13 +192,55 @@ For chat messages, you'd typically use `aria-live="polite"` with `aria-atomic="f
 </div>
 ```
 
+### `aria-busy` — Wait Until Changes Are Complete
+
+The `aria-busy` attribute indicates that an element is undergoing changes and screen readers should wait before exposing updated content to the user.
+This is particularly useful for skeleton screens or loading states in SPAs.
+
+- **`aria-busy="true"`** — The element is being updated. Screen readers should hold off announcing content.
+- **`aria-busy="false"`** (default) — No pending updates, content is ready to be announced.
+
+A common pattern is to combine `aria-busy` with a visually-hidden live region that communicates loading status:
+
+```html
+<div aria-live="polite" class="sr-only">Loading content...</div>
+<section aria-busy="true">
+  <!-- skeleton / loading content -->
+</section>
+```
+
+When content finishes loading, flip `aria-busy` to `false` and update the live region:
+
+```html
+<div aria-live="polite" class="sr-only">Content loaded.</div>
+<section aria-busy="false">
+  <!-- fully loaded content -->
+</section>
+```
+
+> **⚠️ Support caveat:** `aria-busy` is currently not well-supported across most screen reader and browser pairings. Most screen readers (except JAWS) will still read the busy region's content before loading completes. A workaround is to use `aria-hidden="true"` on the busy region and remove it when content is ready. See Adrian Roselli's article ["More Accessible Skeletons"](https://adrianroselli.com/2020/11/more-accessible-skeletons.html) for a robust implementation pattern.
+
+### A Note on Browser and Screen Reader Support
+
+While `aria-relevant`, `aria-atomic`, and `aria-busy` are powerful in theory, **their support is currently inconsistent across browser and screen reader pairings**. This is important to keep in mind:
+
+- `aria-relevant` values other than the default (`additions text`) may be ignored or handled inconsistently.
+- `aria-atomic` generally works better, but individual screen readers may still behave unexpectedly.
+- `aria-busy` is largely unsupported outside of JAWS.
+
+In practice, this means you **cannot fully rely** on these configuration attributes to control announcement behavior. Test thoroughly with multiple screen readers (NVDA, JAWS, VoiceOver) across browsers (Chrome, Firefox, Safari). For status messages, the safest approach remains: insert the complete message text into a persistently-mounted live region in one go — which is exactly what the global announcer pattern does.
+
+### Summary
+
 In short:
 
 - **`aria-live`** defines *when* to speak (or not at all with `off`)
-- **`aria-relevant`** defines *what* to speak
+- **`aria-relevant`** defines *what* to speak (but has poor support)
 - **`aria-atomic`** defines *how much* to speak
+- **`aria-busy`** defines *whether to wait* before speaking (but has poor support)
 
-Together, they let you tune your live regions for exactly the right balance of awareness and calm.
+Together, they let you tune your live regions for exactly the right balance of awareness and calm — at least in theory.
+In practice, stick to the well-supported basics (`aria-live` + `aria-atomic`) and use the global announcer pattern for maximum reliability.
 
 ---
 
@@ -211,19 +257,21 @@ The trick is to make sure **the element itself never leaves the DOM**.
 Don't use `v-if`, `@if()`, or conditional JSX that destroys the node.
 Instead, keep it mounted and update its text content when something changes.
 
+> **⚠️ Important:** Don't use the `hidden` attribute or `display: none` to hide the live region when it has no message — both completely remove the element from the accessibility tree, and screen readers won't track it for changes. Use a visually-hidden CSS class (like `.sr-only`) instead, or simply leave the element empty (an empty element takes no visible space if it has no padding/border).
+
 ```html
-<!-- Angular -->
-<div aria-live="polite" aria-relevant="text" [hidden]="!showMessage">
+<!-- Angular: always in DOM, content drives announcement -->
+<div aria-live="polite" class="sr-only">
   {{ message }}
 </div>
 
-<!-- Vue example -->
-<div aria-live="polite" aria-relevant="text" v-show="showMessage">
+<!-- Vue: v-show keeps it in the DOM (unlike v-if!) -->
+<div aria-live="polite" class="sr-only" v-show="showMessage">
   {{ statusMessage }}
 </div>
 
-<!-- React -->
-<div aria-live="polite" aria-relevant="text" hidden={!showMessage}>
+<!-- React: always mounted, content conditionally rendered inside -->
+<div aria-live="polite" className="sr-only">
   {message}
 </div>
 ```
@@ -305,6 +353,184 @@ We will see that we don't have to do this by hand since there are very popular s
 
 - Announcements lose some *local context* ("Where did that message come from?")
 - Requires a global setup or shared service
+
+---
+
+## Live Region Roles and the `<output>` Element
+
+Beyond using `aria-live` directly, ARIA provides dedicated **live region roles** that add semantic meaning to your notifications.
+
+### Live Region Roles
+
+These roles come with implicit `aria-live` and `aria-atomic` values — so you don't need to set those attributes yourself:
+
+| Role | Implicit `aria-live` | Implicit `aria-atomic` | Use Case |
+|------|---------------------|----------------------|----------|
+| `alert` | `assertive` | `true` | Error messages, urgent notifications |
+| `status` | `polite` | `true` | Success messages, non-urgent status updates |
+| `log` | `polite` | `false` | Chat logs, activity streams |
+| `marquee` | `off` | — | Stock tickers, non-essential changing info |
+| `timer` | `off` | — | Countdowns, elapsed time |
+
+In practice, `alert` and `status` are the most useful and best-supported roles.
+The `marquee` and `timer` roles have poor support and may even be deprecated in future ARIA spec versions.
+
+The key difference between `role="alert"` and `aria-live="assertive"` is that the role adds semantic meaning — some screen readers will announce "Alert" before reading the message content, providing additional context to the user.
+
+```html
+<!-- Using role="alert" — screen reader may announce "Alert: ..." -->
+<div role="alert">Form submission failed. Please try again.</div>
+
+<!-- Using role="status" — for non-urgent feedback -->
+<div role="status">Settings saved successfully.</div>
+```
+
+Another advantage: live region roles accept an **accessible name** via `aria-label` or `aria-labelledby`. A plain `<div aria-live="polite">` cannot consistently expose an accessible name because `<div>` is name-prohibited unless given a meaningful role.
+
+### The `<output>` Element — HTML's Native Live Region
+
+HTML provides one native live region element: `<output>`.
+It maps to the `status` role, which means it behaves as an implicit `aria-live="polite"` region with `aria-atomic="true"`.
+
+`<output>` is meant to represent the result of a calculation or outcome of a user action, and it's also a *labelable* element — you can give it a name with `<label>`:
+
+```html
+<label for="cart-total">Your total is:</label>
+<output id="cart-total">€ 29.99</output>
+```
+
+However, `<output>` currently has **inconsistent announcement behavior** across browser/screen reader pairings — some announce its accessible name, some don't, and some have other quirks. If you use it, test thoroughly. For details, see Scott O'Hara's article ["output: HTML's native live region element"](https://www.scottohara.me/blog/2019/07/10/the-output-element.html).
+
+---
+
+## Limitations: When NOT to Use Live Regions
+
+Understanding the inherent limitations of live regions is just as important as knowing how to implement them.
+
+### Live Regions Don't Handle Rich Text
+
+When a screen reader announces the contents of a live region, it reads **only the raw text** — all semantics are lost. Headings, lists, links, buttons, and other structural or interactive elements inside a live region will not have their roles conveyed.
+
+```html
+<div aria-live="polite">
+  <!-- The user will NOT hear "button" — just the text "Retry" -->
+  <button>Retry</button>
+</div>
+```
+
+This means: **don't wrap large sections of content** in a live region. The entire section's content would be announced as one long, unstructured string of text. If content updates happen in larger areas, consider alternatives like focus management or instructional cues (see below).
+
+### Live Regions Are Not Suitable for Interactive Notifications
+
+Live regions should **not** be used for messages that contain interactive elements the user needs to act on (like "Undo" buttons in toast messages).
+
+Why?
+
+1. The semantics of interactive elements are not conveyed in announcements.
+2. Focus does **not** move to the live region after an announcement — there's no built-in mechanism for the user to navigate to it.
+3. If the notification auto-dismisses after a timeout, the interactive elements become unreachable.
+
+If a notification contains interactive elements, **move the user's focus to it** instead of using a live region, and make the notification persistent. For alert-style dialogs with actions, use the `alertdialog` role with proper focus management as described in the [APG Alert Dialog pattern](https://www.w3.org/WAI/ARIA/apg/patterns/alertdialog/).
+
+### Live Regions Are Not a Substitute for State Properties
+
+Don't use live regions to announce state changes when there's an ARIA attribute designed for that:
+
+- **Toggle states:** Use `aria-expanded` for disclosure widgets, `aria-pressed` for toggle buttons.
+- **Selection:** Use `aria-selected` for tabs or listbox items.
+- **Checked state:** Use `aria-checked` for custom checkboxes.
+
+```html
+<!-- Don't need a live region — aria-expanded communicates the state -->
+<button aria-expanded="false">Show details</button>
+
+<!-- Don't need a live region — aria-pressed communicates On/Off -->
+<button aria-pressed="true">Dark theme</button>
+```
+
+When these state attributes change, screen readers announce the new state as part of the element's information. No live region needed.
+
+---
+
+## Alternatives to Live Regions
+
+Before reaching for a live region, consider these often-more-robust approaches:
+
+### Focus Management
+
+Moving keyboard focus to updated content makes the screen reader announce it immediately and gives users direct access. This is particularly effective for:
+
+- **SPA navigation:** Move focus to the main `<h1>` of the new page instead of using a live region to announce the route change.
+- **Form errors:** Move focus to an error summary at the top of the form.
+- **Modal dialogs:** Move focus into the dialog when it opens.
+- **Shopping carts:** Show a cart overlay and move focus to it instead of announcing "Item added".
+
+### Instructional Cues (Accessible Descriptions)
+
+For UI patterns like dynamic search or filter components, **setting user expectations upfront** can eliminate the need for live regions entirely:
+
+```html
+<label for="search">Search</label>
+<input
+  id="search"
+  type="search"
+  aria-describedby="search-hint"
+/>
+<p id="search-hint" class="sr-only">
+  Results will filter as you type.
+</p>
+```
+
+The user now knows what to expect — no need to announce every result update. You only need a live region for the edge case of announcing "No results found" (which is urgent and unexpected).
+
+This approach is used on production sites like the [WCAG Quick Reference](https://www.w3.org/WAI/WCAG22/quickref/) and [a11ysupport.io](https://a11ysupport.io/).
+
+### The Rule of Thumb
+
+> If you can achieve the same result without a live region — through focus management, state properties, or instructional cues — then prefer the non-live-region approach.
+> No ARIA is better than bad ARIA.
+
+---
+
+## Best Practices for Robust Live Region Implementations
+
+When you *do* need live regions (for short, non-interactive status messages per WCAG SC 4.1.3), follow these best practices:
+
+1. **Mount the live region early** — It must exist in the DOM when the page loads, *before* any updates are pushed into it. Don't create it on-the-fly when you need it.
+
+2. **Limit to two live regions** — One `polite` and one `assertive` region is ideal. Multiple live regions may interfere with each other, and assertive updates can cancel queued polite updates.
+
+3. **Compose messages in one go** — Don't make multiple DOM insertions to build a single message. Pre-compose the full text and insert it in a single operation.
+
+4. **Keep content short and text-only** — Announcements are transient and can't be replayed. Avoid rich content, images, or interactive elements.
+
+5. **Empty the region between updates** — Clear the text content and wait 150–500ms before inserting the next message. This ensures repeated identical messages are still announced and avoids duplicate announcements:
+
+    ```ts
+    region.textContent = '';
+    setTimeout(() => {
+      region.textContent = message;
+    }, 150);
+    ```
+
+6. **Use appropriate hiding** — If the live region isn't visible, use the `.sr-only` class (visually hidden but accessible). Never use `display: none`, `visibility: hidden`, or `aria-hidden="true"` — these remove it from the accessibility tree.
+
+7. **Test across combinations** — Screen reader behavior varies significantly. Test with at least NVDA + Chrome/Firefox, VoiceOver + Safari, and JAWS + Chrome on Windows.
+
+---
+
+## Debugging Live Regions
+
+Debugging live regions can be tricky because announcements are transient and invisible in the DOM inspector. The [NerdeRegion browser extension](https://chrome.google.com/webstore/detail/nerderegion/lkcampbojgmgobcfinlkgkodlnlpjieb) (available for Chrome and Edge) solves this by providing a DevTools panel that:
+
+- Lists all active live regions on the page
+- Records all mutations with timestamps
+- Shows which region an announcement originated from
+- Helps determine if issues are caused by your code or by screen reader inconsistencies
+
+This is invaluable when you have multiple live regions and need to figure out why a message isn't being announced or is being announced incorrectly.
+
+---
 
 ## Implementing Reliable Live Regions in Angular, Vue, and React
 
@@ -428,16 +654,31 @@ The library handles the DOM manipulation and timing automatically, making it a r
 
 ## Conclusion
 
-Making `aria-live` work reliably in modern SPAs comes down to understanding how screen readers interact with the DOM.
+Making `aria-live` work reliably in modern SPAs comes down to understanding how screen readers interact with the DOM — and knowing when *not* to use live regions at all.
 The core issue is that frameworks like Angular, Vue, and React often destroy and recreate elements, breaking the connection assistive technologies need to announce changes.
 By keeping live regions mounted and using established announcer services, you can ensure your dynamic content reaches all users effectively.
 
 - **The root cause**: Screen readers track DOM mutations, not reactive state — when elements are recreated, announcements may fail
 - **Keep it stable**: Live regions must stay mounted; update text content, not structure
 - **Choose wisely**: Use `polite` for most updates, `assertive` only for critical alerts
+- **Know the limits**: Live regions don't convey semantics, can't handle interactive content, and their configuration attributes (`aria-relevant`, `aria-atomic`, `aria-busy`) have inconsistent support
 - **Two patterns**: Local regions for persistent components, global announcers for transient messages
+- **Consider alternatives first**: Focus management, ARIA state properties, and instructional cues are often more robust than live regions
 - **Use proven tools**: Angular CDK's LiveAnnouncer, @vue-a11y/announcer for Vue, @react-aria/live-announcer for React
 - **Test with real users**: Screen reader behavior varies — always validate with actual assistive technology
 - **The payoff**: Reliable announcements make your app more inclusive, responsive, and trustworthy
+
+---
+
+## Further Resources
+
+- [Accessible Notifications with ARIA Live Regions — Part 1](https://www.sarasoueidan.com/blog/accessible-notifications-with-aria-live-regions-part-1/) by Sara Soueidan — A comprehensive deep-dive into how live regions work, including `aria-live`, `aria-relevant`, `aria-atomic`, `aria-busy`, live region roles, and the `<output>` element.
+- [Accessible Notifications with ARIA Live Regions — Part 2](https://www.sarasoueidan.com/blog/accessible-notifications-with-aria-live-regions-part-2/) by Sara Soueidan — Covers limitations of live regions, when *not* to use them, alternative approaches like focus management and instructional cues, and best practices for robust implementations.
+- [Are we live?](https://www.scottohara.me/blog/2022/02/05/are-we-live.html) by Scott O'Hara — Practical guidance on live region implementation pitfalls.
+- [output: HTML's native live region element](https://www.scottohara.me/blog/2019/07/10/the-output-element.html) by Scott O'Hara — Deep-dive into the `<output>` element and its quirks.
+- [More Accessible Skeletons](https://adrianroselli.com/2020/11/more-accessible-skeletons.html) by Adrian Roselli — A robust pattern for accessible loading states without live regions.
+- [Defining 'Toast' Messages](https://adrianroselli.com/2020/01/defining-toast-messages.html) by Adrian Roselli — Why toast messages with interactive elements are problematic and what WCAG failures they cause.
+- [Considering dynamic search results and content](https://www.scottohara.me/blog/2022/02/05/dynamic-results.html) by Scott O'Hara — How to implement accessible search-as-you-type patterns.
+- [NerdeRegion](https://chrome.google.com/webstore/detail/nerderegion/lkcampbojgmgobcfinlkgkodlnlpjieb) — A browser extension for debugging live regions in DevTools.
 
 <small>**Thanks** for [Ferdinand Malcher](https://github.com/fmalcher/), [Milan Wanielik](https://github.com/milan-w) and [Maximilian Franzke](https://github.com/mfranzke) for reviewing this article.<br />**Cover image:** Picture from [Freepik](https://www.freepik.com/free-photo/paper-hand-holding-megaphone_19925176.htm), edited.</small>
