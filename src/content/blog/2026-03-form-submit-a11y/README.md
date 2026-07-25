@@ -23,5 +23,5 @@ keywords:
   - Focus Handling
 language: de
 thumbnail:
-  header: https://website-articles.angular-buch.com/blog/2026-03-form-submit-a11y/a11y-submit.jpg
+  header: https://website-articles.angular-buch.com/blog/2026-03-form-submit-a11y/a11y-submit.webp
 ---

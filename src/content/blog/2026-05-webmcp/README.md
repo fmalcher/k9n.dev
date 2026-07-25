@@ -25,5 +25,5 @@ keywords:
   - Browser API
 language: de
 thumbnail:
-  header: https://website-articles.angular-buch.com/blog/2026-05-webmcp/webmcp.jpg
+  header: https://website-articles.angular-buch.com/blog/2026-05-webmcp/webmcp.webp
 ---

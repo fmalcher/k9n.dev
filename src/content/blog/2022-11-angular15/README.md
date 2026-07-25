@@ -23,6 +23,6 @@ keywords:
   - Image Directive
 language: de
 thumbnail:
-  header: https://website-articles.angular-buch.com/blog/2022-11-angular15/angular15.jpg
+  header: https://website-articles.angular-buch.com/blog/2022-11-angular15/angular15.webp
 series: angular-update
 ---
