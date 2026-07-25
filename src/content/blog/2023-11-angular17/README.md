@@ -24,6 +24,6 @@ keywords:
   - angular.dev
 language: de
 thumbnail:
-  header: https://website-articles.angular-buch.com/blog/2023-11-angular17/angular17.jpg
+  header: https://website-articles.angular-buch.com/blog/2023-11-angular17/angular17.webp
 series: angular-update
 ---

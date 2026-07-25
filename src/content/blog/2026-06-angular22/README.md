@@ -30,6 +30,6 @@ keywords:
   - Webpack
 language: de
 thumbnail:
-  header: https://website-articles.angular-buch.com/blog/2026-06-angular22/angular22.jpg
+  header: https://website-articles.angular-buch.com/blog/2026-06-angular22/angular22.webp
 series: angular-update
 ---
